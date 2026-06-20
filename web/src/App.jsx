@@ -14,6 +14,27 @@ import { api, getToken, setToken, clearToken } from "./api.js";
 // concat condicional de classes (helper `A` no bundle)
 function cn(...xs) { return xs.filter(Boolean).join(" "); }
 
+// Resolve o nome do cliente pela SUA agenda (Clientes). Tolera 9º dígito BR e últimos 8.
+function agendaResolve(contacts, phone) {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (!d || !Array.isArray(contacts)) return "";
+  const variants = new Set([d]);
+  if (d.length === 13 && d.startsWith("55") && d[4] === "9") variants.add(d.slice(0, 4) + d.slice(5));
+  if (d.length === 12 && d.startsWith("55")) variants.add(d.slice(0, 4) + "9" + d.slice(4));
+  const tail = d.slice(-8);
+  const c = contacts.find((x) => {
+    const p = String(x.phoneE164 || x.phone || "").replace(/\D/g, "");
+    return variants.has(p) || (p.length >= 8 && p.slice(-8) === tail);
+  });
+  return c && c.name ? c.name.trim() : "";
+}
+// Carrega a agenda (Clientes) uma vez para resolução de nomes nas telas
+function useAgenda() {
+  const [list, setList] = useState([]);
+  useEffect(() => { api("contacts").then((x) => setList(Array.isArray(x) ? x : [])).catch(() => {}); }, []);
+  return list;
+}
+
 // classes de input/select reutilizadas em todo o app (`V` / `Yt` no bundle)
 const INPUT =
   "w-full bg-ink border border-hair-2 text-bone rounded-xl px-3 py-2 text-sm placeholder:text-mut focus:outline-none focus:border-signal/60 focus:ring-1 focus:ring-signal/30 transition";
@@ -193,7 +214,7 @@ function NavItem({ icon: Icon, label, active, onClick, badge }) {
 // Seletor de contato com busca + entrada manual (`hr` no bundle).
 // MELHORIA DE UI: deixa explícito que dá pra digitar o número à mão,
 // sem remover a busca por nome.
-function ContactPicker({ value, onChange, onPickContact, placeholder = "Ex: 5511999999999", className }) {
+function ContactPicker({ value, onChange, onPickContact, placeholder = "Ex: 5511999999999", className, source = "whatsapp" }) {
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -209,8 +230,24 @@ function ContactPicker({ value, onChange, onPickContact, placeholder = "Ex: 5511
   async function search(q) {
     setLoading(true);
     try {
-      const data = await api(`whatsapp/contacts?q=${encodeURIComponent(q)}&limit=8`);
-      setResults(Array.isArray(data) ? data : []);
+      if (source === "agenda") {
+        // Busca na SUA agenda (Clientes): seus nomes, números reais (sem LID)
+        const all = await api("contacts");
+        const ql = String(q || "").toLowerCase().trim();
+        const qd = String(q || "").replace(/\D/g, "");
+        const filtered = (Array.isArray(all) ? all : [])
+          .filter((c) => {
+            const nm = String(c.name || "").toLowerCase();
+            const ph = String(c.phoneE164 || c.phone || "").replace(/\D/g, "");
+            return !ql || nm.includes(ql) || (qd && ph.includes(qd));
+          })
+          .slice(0, 8)
+          .map((c) => ({ phone: c.phoneE164 || c.phone || "", name: c.name || "" }));
+        setResults(filtered);
+      } else {
+        const data = await api(`whatsapp/contacts?q=${encodeURIComponent(q)}&limit=8`);
+        setResults(Array.isArray(data) ? data : []);
+      }
       setOpen(true);
     } catch { setResults([]); }
     finally { setLoading(false); }
@@ -245,7 +282,7 @@ function ContactPicker({ value, onChange, onPickContact, placeholder = "Ex: 5511
       </div>
       {/* dica de número manual — torna explícita a digitação direta */}
       <div className="text-xs text-mut mt-1">
-        Digite o número com DDD (ex.: 5511999999999) <span className="text-mut">ou</span> busque pelo nome do contato.
+        Digite o número com DDD (ex.: 5511999999999) <span className="text-mut">ou</span> busque {source === "agenda" ? "nos seus Clientes" : "pelo nome do contato"}.
       </div>
       {open && results.length > 0 && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-raised border border-hair-2 rounded-xl shadow-xl overflow-hidden">
@@ -685,19 +722,7 @@ function AutoReplyView({ toast }) {
   useEffect(() => { load(); }, [load]);
 
   // Nome do cliente pela SUA AGENDA (Clientes) — fonte da verdade, estavel.
-  const agendaName = (phone) => {
-    const d = String(phone || "").replace(/\D/g, "");
-    if (!d) return "";
-    const variants = new Set([d]);
-    if (d.length === 13 && d.startsWith("55") && d[4] === "9") variants.add(d.slice(0, 4) + d.slice(5));
-    if (d.length === 12 && d.startsWith("55")) variants.add(d.slice(0, 4) + "9" + d.slice(4));
-    const tail = d.slice(-8);
-    const c = contacts.find((x) => {
-      const p = String(x.phoneE164 || x.phone || "").replace(/\D/g, "");
-      return variants.has(p) || (p.length >= 8 && p.slice(-8) === tail);
-    });
-    return c && c.name ? c.name.trim() : "";
-  };
+  const agendaName = (phone) => agendaResolve(contacts, phone);
 
   function openNew() { setEditing(null); setForm(blank); setMode("all"); setOpen(true); }
   function openEdit(r) {
@@ -775,7 +800,7 @@ function AutoReplyView({ toast }) {
       <div className="bg-ink-2 border border-hair rounded-2xl p-5 space-y-3">
         <div className="text-sm font-semibold text-bone">🧪 Testar Auto-Reply</div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <ContactPicker value={test.phone} onChange={(v) => setTest((t) => ({ ...t, phone: v }))} placeholder="Número do remetente" />
+          <ContactPicker value={test.phone} onChange={(v) => setTest((t) => ({ ...t, phone: v }))} placeholder="Número do remetente" source="agenda" />
           <input className={INPUT} value={test.text} onChange={(e) => setTest((t) => ({ ...t, text: e.target.value }))} placeholder="Texto da mensagem recebida" />
           <button onClick={runTest} disabled={testing} className="rounded-xl bg-signal hover:opacity-90 disabled:opacity-50 text-ink py-2 font-medium text-sm flex items-center justify-center gap-2 transition-colors">
             {testing && <Loader2 className="h-4 w-4 animate-spin" />} Simular mensagem
@@ -827,7 +852,7 @@ function AutoReplyView({ toast }) {
                 <button type="button" onClick={() => setMode("specific")} className={cn("flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center justify-center gap-1", mode === "specific" ? "bg-emerald-600 border-emerald-500 text-bone" : "border-hair-2 text-mist hover:bg-raised")}><Search className="h-3 w-3" /> Puxar</button>
               </div>
               {mode === "specific"
-                ? <ContactPicker value={form.targetPhone} onChange={(v) => setForm((f) => ({ ...f, targetPhone: v }))} onPickContact={(c) => setForm((f) => ({ ...f, targetPhone: c.phone || "", targetName: c.name || "" }))} placeholder="Buscar contato do WhatsApp..." />
+                ? <ContactPicker value={form.targetPhone} onChange={(v) => setForm((f) => ({ ...f, targetPhone: v }))} onPickContact={(c) => setForm((f) => ({ ...f, targetPhone: c.phone || "", targetName: c.name || "" }))} placeholder="Buscar nos seus Clientes..." source="agenda" />
                 : <div className="bg-raised border border-hair rounded-xl px-3 py-2 text-sm text-mut italic">Responde a todos os contatos</div>}
             </Field>
           </div>
@@ -976,7 +1001,7 @@ function RecurringView({ toast }) {
                 </Field>
                 <Field label="Valor do alvo">
                   {form.targetType === "contact"
-                    ? <ContactPicker value={form.targetValue} onChange={(v) => setForm((f) => ({ ...f, targetValue: v }))} placeholder="Buscar contato..." />
+                    ? <ContactPicker value={form.targetValue} onChange={(v) => setForm((f) => ({ ...f, targetValue: v }))} placeholder="Buscar nos seus Clientes..." source="agenda" />
                     : <input className={INPUT} value={form.targetValue} onChange={(e) => setForm((f) => ({ ...f, targetValue: e.target.value }))} placeholder={form.targetType === "tag" ? "Ex: vip" : "Ex: 5511999999999"} />}
                 </Field>
               </div>
@@ -1053,6 +1078,7 @@ const SCHED_STATUS = {
   cancelled: "bg-raised text-mut",
 };
 function ScheduledView({ toast }) {
+  const agenda = useAgenda();
   const [list, setList] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [open, setOpen] = useState(false);
@@ -1102,7 +1128,7 @@ function ScheduledView({ toast }) {
         {list.map((c) => (
           <div key={c._id} className="grid grid-cols-12 border-b border-hair px-4 py-3 text-sm hover:bg-raised transition-colors items-center">
             <div className="col-span-3">
-              <div className="font-medium text-bone">{c.contactName || c.name || "—"}</div>
+              <div className="font-medium text-bone">{agendaResolve(agenda, c.phoneE164) || c.contactName || c.name || "—"}</div>
               <div className="text-xs text-mut font-mono">{c.phoneE164}</div>
               {c.templateId && <div className="text-xs text-brand-400 mt-0.5">Template: {c.templateId.name}</div>}
             </div>
@@ -1120,7 +1146,7 @@ function ScheduledView({ toast }) {
       <Modal open={open} title="Novo Agendamento" onClose={() => setOpen(false)}>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-3xl">
           <div className="space-y-4">
-            <Field label="Destinatário *"><ContactPicker value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} onPickContact={(c) => setForm((f) => ({ ...f, phone: c.phone || "", contactName: c.name || "" }))} /></Field>
+            <Field label="Destinatário *"><ContactPicker value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} onPickContact={(c) => setForm((f) => ({ ...f, phone: c.phone || "", contactName: c.name || "" }))} source="agenda" /></Field>
             <Field label="Descrição (opcional)"><input className={INPUT} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Ex: Lembrete para João" /></Field>
             <Field label="Template (opcional)">
               <select className={SELECT} value={form.templateId} onChange={(e) => { const t = templates.find((x) => x._id === e.target.value); setForm((f) => ({ ...f, templateId: e.target.value, message: t ? t.body : f.message })); }}>
@@ -1152,6 +1178,7 @@ const PIPE_STATUS = {
   ended: { label: "Encerrado", color: "bg-raised-2 text-mut" },
 };
 function PipelineView({ toast }) {
+  const agenda = useAgenda();
   const [tab, setTab] = useState("esteira"); // esteira | semanas | onboarding
   const [contacts, setContacts] = useState([]);
   const [metrics, setMetrics] = useState(null);
@@ -1247,7 +1274,7 @@ function PipelineView({ toast }) {
             const st = PIPE_STATUS[c.status] || PIPE_STATUS.ended;
             return (
               <div key={c._id} className="grid grid-cols-12 border-b border-hair px-4 py-3 text-sm hover:bg-raised transition-colors items-center">
-                <div className="col-span-3 font-medium text-bone">{c.name || "Sem nome"}</div>
+                <div className="col-span-3 font-medium text-bone">{agendaResolve(agenda, c.phoneE164) || c.name || "Sem nome"}</div>
                 <div className="col-span-2 text-mist font-mono text-xs">{c.phoneE164}</div>
                 <div className="col-span-2 text-xs"><span className={cn("px-2 py-1 rounded-full font-medium", st.color)}>{st.label}</span></div>
                 <div className="col-span-2 text-xs text-mut">{new Date(c.enteredAt).toLocaleDateString("pt-BR")}</div>
@@ -1412,7 +1439,7 @@ function SubscriptionsView({ toast }) {
         {rows.map((c) => (
           <div key={c._id} className="flex items-center justify-between bg-raised border border-hair hover:border-hair-2 rounded-xl px-4 py-3">
             <div>
-              <div className="text-sm font-medium text-bone">{c.name || "Sem nome"}</div>
+              <div className="text-sm font-medium text-bone">{agendaResolve(agenda, c.phoneE164) || c.name || "Sem nome"}</div>
               <div className="text-xs text-mut mt-0.5 font-mono">{c.phoneE164}</div>
             </div>
             <div className="text-xs text-mist">{c.subscriptionEnd ? new Date(c.subscriptionEnd).toLocaleDateString("pt-BR") : "—"}</div>
