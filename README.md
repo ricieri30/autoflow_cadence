@@ -1,7 +1,7 @@
 <div align="center">
 
 # AutoFlow **Cadence**
-
+Cadence#2026
 **Plataforma auto-hospedada de automação de WhatsApp** — respostas automáticas, agendamentos, esteira de onboarding, assinaturas e disparos recorrentes, com um console operacional de visual premium.
 
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
