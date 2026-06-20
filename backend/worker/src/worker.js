@@ -111,7 +111,7 @@ new Worker("wa-scheduler", async (job) => {
       try {
         if (step.type === "text") {
           await sendText(pc.phoneE164, render(step.content, { nome: firstName(pc.name) }));
-        } else if (["image","video","document"].includes(step.type) && step.mediaUrl) {
+        } else if (["image","video","document","audio"].includes(step.type) && step.mediaUrl) {
           // Enviar mídia com legenda
           const r = await fetch(`${process.env.WA_GATEWAY_URL}/send-media`, {
             method: "POST", headers: { "Content-Type": "application/json" },

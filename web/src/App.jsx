@@ -4,7 +4,7 @@ import {
   CalendarClock, FileText, ScrollText, CreditCard, Database, User as UserIcon,
   MessageSquare, LogOut, Loader2, RefreshCw, Clock, Copy, Pencil, Trash2,
   Download, Upload, Search, Check, Plus, X, CheckCircle2, Smartphone,
-  ArrowUpRight } from "lucide-react";
+  ArrowUpRight, Menu } from "lucide-react";
 import { api, getToken, setToken, clearToken } from "./api.js";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1664,6 +1664,7 @@ const OPERACAO = ["dashboard", "contacts", "pipeline", "recurring", "autoReply",
 
 function Shell({ user, onLogout }) {
   const [screen, setScreen] = useState("dashboard");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [summary, setSummary] = useState({});
   const [waStatus, setWaStatus] = useState("starting");
   const [toast, showToast] = useToast();
@@ -1676,6 +1677,7 @@ function Shell({ user, onLogout }) {
   }, []);
 
   function go(key) {
+    setMenuOpen(false);
     const item = NAV.find((n) => n.key === key);
     if (item?.href) { window.location.href = item.href; return; }
     setScreen(key);
@@ -1684,8 +1686,9 @@ function Shell({ user, onLogout }) {
   return (
     <div className="min-h-screen bg-transparent text-bone flex">
       <Toast toast={toast} />
+      {menuOpen && <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setMenuOpen(false)} />}
       {/* RAIL — console Cadence */}
-      <aside className="w-[236px] flex-shrink-0 border-r border-hair bg-gradient-to-b from-ink-2 to-ink flex flex-col sticky top-0 h-screen">
+      <aside className={cn("w-[236px] flex-shrink-0 border-r border-hair bg-gradient-to-b from-ink-2 to-ink flex flex-col fixed inset-y-0 left-0 z-50 h-screen transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0", menuOpen ? "translate-x-0" : "-translate-x-full")}>
         <div className="flex items-center gap-3 px-4 pt-[18px] pb-1">
           <div className="w-[30px] h-[30px] rounded-[9px] flex-none border border-hair-2 flex items-center justify-center" style={{ background: "radial-gradient(circle at 30% 25%, #2a3b36, #0d1311)" }}>
             <span className="w-[11px] h-[11px] rounded-full bg-signal" style={{ boxShadow: "0 0 0 3px rgba(63,224,162,.16), 0 0 14px #3FE0A2" }} />
@@ -1741,6 +1744,13 @@ function Shell({ user, onLogout }) {
 
       {/* Conteúdo */}
       <main className="flex-1 overflow-auto min-w-0">
+        <div className="md:hidden sticky top-0 z-30 flex items-center gap-2.5 px-4 h-14 border-b border-hair bg-ink-2/95 backdrop-blur">
+          <button onClick={() => setMenuOpen(true)} className="p-2 -ml-2 rounded-lg hover:bg-raised text-mist" aria-label="Abrir menu">
+            <Menu className="h-5 w-5" />
+          </button>
+          <span className="font-display font-bold text-[15px] tracking-tight text-bone">AutoFlow</span>
+          <span className="text-[9px] text-mut tracking-[0.16em] uppercase mt-0.5">Cadence</span>
+        </div>
         {screen === "dashboard" && <DashboardView onNavigate={go} />}
         {screen === "contacts" && <ContactsView toast={showToast} />}
         {screen === "pipeline" && <PipelineView toast={showToast} />}

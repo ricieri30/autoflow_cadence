@@ -22,7 +22,7 @@ banco, fila, gateway, **sessão de WhatsApp** e dados são TODOS próprios.
 
 ## Primeiro acesso
 - Abre em:  http://2.25.145.110:4050
-- Login:  admin@admin.com  /  Cadence#2026   (TROQUE depois, na aba Conta)
+- Login:  admin@admin.com  /  admin123   (TROQUE depois, na aba Conta)
 - Aba **WhatsApp** → escaneie o **QR novo**.
 
 > ⚠️ SESSÃO PRÓPRIA: um número fica logado em UMA sessão por vez.

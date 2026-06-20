@@ -26,10 +26,35 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
+import fs from "fs";
+import path from "path";
+import { spawn } from "child_process";
 
 const PORT = process.env.PORT || 3333;
 const AUTH_DIR = process.env.AUTH_DIR || "/app/auth";
 const WEBHOOK_URL = process.env.WEBHOOK_URL || "http://api:3000/api/internal/message";
+const MEDIA_DIR = process.env.MEDIA_DIR || "/media";
+
+// Resolve referência local:<arquivo> -> caminho no volume compartilhado
+function resolveLocalPath(url = "") {
+  if (typeof url === "string" && url.startsWith("local:")) {
+    const safe = url.slice(6).replace(/[^a-zA-Z0-9._-]/g, "");
+    return path.join(MEDIA_DIR, safe);
+  }
+  return null;
+}
+// Converte áudio (mp3/m4a/wav) para ogg/opus — formato de voz do WhatsApp
+function toOpus(inputPath) {
+  return new Promise((resolve, reject) => {
+    const out = inputPath + ".voz.ogg";
+    const ff = spawn("ffmpeg", ["-y", "-i", inputPath, "-c:a", "libopus", "-b:a", "64k", "-ar", "48000", "-ac", "1", out]);
+    ff.on("error", reject);
+    ff.on("close", (code) => {
+      if (code !== 0) return reject(new Error("ffmpeg_falhou_" + code));
+      try { const b = fs.readFileSync(out); fs.unlinkSync(out); resolve(b); } catch (e) { reject(e); }
+    });
+  });
+}
 
 const logger = pino({ level: process.env.LOG_LEVEL || "warn" });
 
@@ -241,10 +266,19 @@ async function sendText({ to, text, replyTo }) {
 async function sendMedia({ to, type, url, caption }) {
   if (!sock || status !== "connected") throw new Error("not_connected");
   const jid = await resolveJid(to);
+  const localPath = resolveLocalPath(url);
+  const src = (localPath && fs.existsSync(localPath)) ? fs.readFileSync(localPath) : { url };
   let content;
-  if (type === "image") content = { image: { url }, caption: caption || "" };
-  else if (type === "video") content = { video: { url }, caption: caption || "" };
-  else if (type === "document") content = { document: { url }, fileName: caption || "arquivo" };
+  if (type === "audio") {
+    // Mensagem de voz (ptt): ogg/opus vai direto; outros formatos são convertidos.
+    let buffer = null;
+    if (localPath && fs.existsSync(localPath)) {
+      buffer = /\.(ogg|oga|opus)$/i.test(localPath) ? fs.readFileSync(localPath) : await toOpus(localPath);
+    }
+    content = { audio: buffer || { url }, ptt: true, mimetype: "audio/ogg; codecs=opus" };
+  } else if (type === "image") content = { image: src, caption: caption || "" };
+  else if (type === "video") content = { video: src, caption: caption || "" };
+  else if (type === "document") content = { document: src, fileName: caption || "arquivo" };
   else content = { text: caption || "" };
   const r = await sock.sendMessage(jid, content);
   return { ok: true, id: r?.key?.id || null, jid };

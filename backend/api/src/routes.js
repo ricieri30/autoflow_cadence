@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import cronParser from "cron-parser";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
+import multer from "multer";
 
 import { auth } from "./auth.js";
 import { render } from "./template.js";
@@ -652,6 +654,24 @@ router.delete("/auto-reply/:id", auth, async (req, res) => {
 });
 
 // ── Webhook interno — recebe mensagens do wa-gateway ─────────────
+// ── Upload de mídia (áudio/imagem/etc) -> volume compartilhado /media ──
+const MEDIA_DIR = process.env.MEDIA_DIR || "/media";
+try { fs.mkdirSync(MEDIA_DIR, { recursive: true }); } catch (e) { /* ok */ }
+const uploadMedia = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, MEDIA_DIR),
+    filename: (_req, file, cb) => {
+      const ext = (path.extname(file.originalname || "") || "").toLowerCase().replace(/[^.a-z0-9]/g, "") || ".bin";
+      cb(null, crypto.randomBytes(8).toString("hex") + ext);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+router.post("/upload-media", auth, uploadMedia.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "sem_arquivo" });
+  res.json({ url: "local:" + req.file.filename, mediaId: req.file.filename });
+});
+
 // Chamado pelo gateway quando chega mensagem no WhatsApp
 router.post("/internal/message", async (req, res) => {
   const { from, text, pushName, fromLid, fromReal, replyTo } = req.body;
@@ -661,6 +681,22 @@ router.post("/internal/message", async (req, res) => {
   const phone = normPhone(from);
   const candidates = new Set([phone, normPhone(fromLid), normPhone(fromReal)].filter(Boolean));
   console.log(`📨 /internal/message: from=${phone} (ids: ${[...candidates].join(",")}) text="${text}"`);
+
+  // AUTO-CADASTRO na agenda (Clientes): quem te manda mensagem entra com o NÚMERO REAL.
+  // Usa fromReal (decodificado do LID); pula grupos e LIDs sem número real.
+  // NÃO sobrescreve contato existente — preserva o nome que VOCÊ definiu.
+  try {
+    const isLid = /@lid$/i.test(String(from));
+    const isGroup = /@g\.us$/i.test(String(from));
+    const realPhone = normPhone(fromReal) || (isLid ? "" : phone);
+    if (!isGroup && realPhone && realPhone.length >= 10) {
+      const exists = await Contact.findOne({ phoneE164: { $in: brVariants(realPhone) } });
+      if (!exists) {
+        await Contact.create({ phoneE164: realPhone, name: (pushName || "").trim(), tags: [], optIn: true });
+        console.log(`🆕 Contato auto-cadastrado na agenda: ${realPhone} (${pushName || "sem nome"})`);
+      }
+    }
+  } catch (e) { /* duplicado/erro de schema — ignora */ }
 
   const rules = await AutoReply.find({ active: true }).sort({ targetPhone: -1, createdAt: 1 });
 

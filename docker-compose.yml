@@ -40,14 +40,14 @@ services:
       - PORT=3333
       - WEBHOOK_URL=http://api:3000/api/internal/message
       - TZ=America/Sao_Paulo
-    volumes: ["afcad_wa_auth:/app/auth"]   # SESSÃO PRÓPRIA — vai pedir QR novo
+    volumes: ["afcad_wa_auth:/app/auth", "afcad_media:/media"]   # SESSÃO PRÓPRIA + mídia/áudio
     restart: unless-stopped
     networks: [afcad-net]
 
   api:
     build: ./backend/api
     container_name: afcad_api
-    volumes: ["afcad_backups:/backups"]
+    volumes: ["afcad_backups:/backups", "afcad_media:/media"]
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -55,7 +55,7 @@ services:
       - REDIS_HOST=redis
       - JWT_SECRET=${JWT_SECRET:-cadence-troque-este-segredo-por-32-chars-aleatorios}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@admin.com}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Cadence#2026}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - WA_GATEWAY_URL=http://wa-gateway:3333
       - TZ=America/Sao_Paulo
       - NOTICE_7D=${NOTICE_7D:-Olá {{nome}}! Sua assinatura vence em 7 dias.}
@@ -101,3 +101,4 @@ volumes:
   afcad_redis:
   afcad_wa_auth:
   afcad_backups:
+  afcad_media:

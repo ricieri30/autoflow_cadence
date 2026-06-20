@@ -1,7 +1,7 @@
 <div align="center">
 
 # AutoFlow **Cadence**
-Cadence#2026
+
 **Plataforma auto-hospedada de automação de WhatsApp** — respostas automáticas, agendamentos, esteira de onboarding, assinaturas e disparos recorrentes, com um console operacional de visual premium.
 
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
@@ -105,7 +105,7 @@ docker compose up -d --build
 | | |
 |---|---|
 | **URL** | `http://SEU_IP:4050` |
-| **Login inicial** | `admin@admin.com` / `Cadence#2026` |
+| **Login inicial** | `admin@admin.com` / `admin123` |
 
 1. Faça login e **troque a senha** na aba **Conta**.
 2. Vá em **WhatsApp** e **escaneie o QR Code** para conectar.
@@ -122,7 +122,7 @@ Os valores têm padrões embutidos no `docker-compose.yml`. Para produção, def
 |----------|--------|-----------|
 | `JWT_SECRET` | *(placeholder)* | Segredo de assinatura dos tokens. **Troque** por valor aleatório (`openssl rand -hex 32`). |
 | `ADMIN_EMAIL` | `admin@admin.com` | E-mail do admin inicial. |
-| `ADMIN_PASSWORD` | `Cadence#2026` | Senha inicial (altere após o 1º login). |
+| `ADMIN_PASSWORD` | `admin123` | Senha inicial (altere após o 1º login). |
 | `MIN_MESSAGE_DELAY_MS` | `2000` | Atraso mínimo entre envios (anti-bloqueio). |
 | `JITTER_MS` | `1000` | Variação aleatória somada ao atraso. |
 | `NOTICE_7D` / `NOTICE_1D` / `NOTICE_TODAY` | *(textos)* | Avisos de vencimento de assinatura. |
