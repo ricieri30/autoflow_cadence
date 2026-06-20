@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AutoFlow — Backups</title>
+<style>
+  :root{--bg:#0f172a;--card:#1e293b;--bd:#334155;--tx:#e2e8f0;--mut:#94a3b8;--ok:#22c55e;--bad:#ef4444;--warn:#f59e0b;--acc:#7c3aed}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:1040px;margin:0 auto;padding:28px 20px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--mut);margin:0 0 20px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+  button{background:var(--acc);color:#fff;border:0;padding:9px 16px;border-radius:10px;font-size:14px;cursor:pointer}
+  button.sec{background:#334155}
+  button.danger{background:var(--bad)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .info{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px 14px;color:var(--mut)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--bd);font-size:13px}
+  th{color:var(--mut);font-weight:600;background:#172033}
+  tr:last-child td{border-bottom:0}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill.ok{background:rgba(34,197,94,.15);color:var(--ok)}
+  .pill.bad{background:rgba(239,68,68,.15);color:var(--bad)}
+  .parts span{display:inline-block;margin-right:6px;font-size:11px;color:var(--mut)}
+  .parts span.y{color:var(--ok)} .parts span.n{color:var(--bad)}
+  pre{background:#0b1220;border:1px solid var(--bd);border-radius:12px;padding:14px;max-height:280px;overflow:auto;font-size:12px;color:#cbd5e1;white-space:pre-wrap}
+  .toast{position:fixed;right:20px;bottom:20px;background:var(--card);border:1px solid var(--bd);padding:12px 16px;border-radius:10px;display:none;max-width:360px}
+  a.back{color:var(--acc);text-decoration:none;font-size:13px}
+  button.mini{padding:6px 11px;font-size:12px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal .box{background:var(--card);border:1px solid var(--bd);border-radius:14px;max-width:480px;width:100%;padding:22px}
+  .modal h2{margin:0 0 8px;font-size:18px}
+  .alert{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);color:#fde68a;border-radius:10px;padding:10px 12px;font-size:13px;margin:12px 0}
+  label{display:block;font-size:13px;color:var(--mut);margin:12px 0 4px}
+  select,input[type=text]{width:100%;background:#0b1220;border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:9px 10px;font-size:14px}
+  .mrow{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← Voltar ao AutoFlow</a>
+  <h1>Gestão de Backups</h1>
+  <p class="sub">Backup interno completo — código, banco (MongoDB) e sessão do WhatsApp.</p>
+  <div id="meta" class="info" style="margin-bottom:14px">Carregando…</div>
+  <div class="bar">
+    <button id="btnRun">Fazer backup agora</button>
+    <button id="btnReload" class="sec">Atualizar lista</button>
+    <button id="btnLog" class="sec">Ver log</button>
+  </div>
+  <table id="tbl"><thead><tr><th>Data</th><th>Tamanho</th><th>Status</th><th>Conteúdo</th><th>Criado em</th><th></th></tr></thead><tbody id="rows"><tr><td colspan="6">Carregando…</td></tr></tbody></table>
+  <div id="logBox" style="display:none;margin-top:16px"><h3 style="margin:0 0 8px">Log</h3><pre id="logPre"></pre></div>
+</div>
+
+<div id="modal" class="modal"><div class="box">
+  <h2>Restaurar backup</h2>
+  <p class="sub" style="margin:0">Você vai restaurar o backup de <b id="mDate"></b>.</p>
+  <div class="alert">⚠️ Isto <b>sobrescreve</b> os dados atuais (código, banco e/ou sessão do WhatsApp). Um <b>backup de segurança do estado atual</b> será feito automaticamente antes. A ação não pode ser desfeita sem esse ponto de retorno.</div>
+  <label>O que restaurar</label>
+  <select id="mTarget">
+    <option value="all">Tudo (código + banco + WhatsApp)</option>
+    <option value="mongo">Apenas o banco de dados (clientes, mensagens)</option>
+    <option value="code">Apenas o código</option>
+    <option value="wa_auth">Apenas a sessão do WhatsApp</option>
+  </select>
+  <label>Para confirmar, digite a data do backup (<span id="mDate2"></span>)</label>
+  <input id="mConfirm" type="text" placeholder="AAAA-MM-DD" autocomplete="off"/>
+  <div class="mrow">
+    <button class="sec" id="mCancel">Cancelar</button>
+    <button class="danger" id="mGo" disabled>Restaurar agora</button>
+  </div>
+</div></div>
+
+<div id="toast" class="toast"></div>
+<script>
+const TK = localStorage.getItem('token');
+function role(){ try{ return JSON.parse(atob(TK.split('.')[1])).role; }catch(_){ return null; } }
+if(!TK){ document.body.innerHTML='<div class="wrap"><h1>Sessão necessária</h1><p class="sub">Faça login no AutoFlow primeiro. <a class="back" href="/">Ir para o login</a></p></div>'; }
+const IS_ADMIN = role()==='admin';
+const H={'Authorization':'Bearer '+TK,'Content-Type':'application/json'};
+let currentDate=null;
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',4500);}
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+async function load(){
+  try{
+    const r=await fetch('/api/backup/list',{headers:H});
+    if(r.status===401||r.status===403){document.getElementById('meta').textContent='Acesso restrito ao administrador. Faça login como admin.';document.getElementById('rows').innerHTML='';return;}
+    const d=await r.json();
+    document.getElementById('meta').innerHTML='Total de backups: <b>'+d.count+'</b> &nbsp;•&nbsp; Retenção: <b>'+d.retentionDays+' dias</b> &nbsp;•&nbsp; Agendamento: <b>'+esc(d.schedule)+'</b>';
+    const rows=document.getElementById('rows');
+    if(!d.backups.length){rows.innerHTML='<tr><td colspan="6">Nenhum backup ainda.</td></tr>';return;}
+    rows.innerHTML=d.backups.map(b=>{
+      const p=b.parts; const part=(k,l)=>'<span class="'+(p[k]?'y':'n')+'">'+(p[k]?'✓':'✗')+' '+l+'</span>';
+      const act=IS_ADMIN?('<button class="danger mini" onclick="openRestore(\''+esc(b.date)+'\')">Restaurar</button>'):'';
+      return '<tr><td><b>'+esc(b.date)+'</b></td><td>'+esc(b.size)+'</td>'+
+        '<td><span class="pill '+(b.complete?'ok':'bad')+'">'+(b.complete?'completo':'incompleto')+'</span></td>'+
+        '<td class="parts">'+part('code','código')+part('mongo','banco')+part('waAuth','whatsapp')+'</td>'+
+        '<td>'+esc(new Date(b.createdAt).toLocaleString('pt-BR'))+'</td><td style="text-align:right">'+act+'</td></tr>';
+    }).join('');
+  }catch(e){toast('Erro ao carregar: '+e.message);}
+}
+window.openRestore=function(date){
+  currentDate=date;
+  document.getElementById('mDate').textContent=date;
+  document.getElementById('mDate2').textContent=date;
+  document.getElementById('mConfirm').value='';
+  document.getElementById('mGo').disabled=true;
+  document.getElementById('mTarget').value='all';
+  document.getElementById('modal').style.display='flex';
+};
+document.getElementById('mCancel').onclick=()=>document.getElementById('modal').style.display='none';
+document.getElementById('mConfirm').addEventListener('input',e=>{
+  document.getElementById('mGo').disabled = (e.target.value.trim()!==currentDate);
+});
+document.getElementById('mGo').onclick=async()=>{
+  const target=document.getElementById('mTarget').value;
+  const btn=document.getElementById('mGo'); btn.disabled=true; btn.textContent='Solicitando…';
+  try{
+    const r=await fetch('/api/backup/restore',{method:'POST',headers:H,body:JSON.stringify({date:currentDate,target})});
+    const d=await r.json();
+    if(!r.ok){ toast('Erro: '+(d.error||r.status)); }
+    else { toast(d.message||'Restauração solicitada.'); document.getElementById('modal').style.display='none'; if(d.id) pollStatus(d.id); }
+  }catch(e){toast('Erro: '+e.message);}
+  finally{ btn.textContent='Restaurar agora'; }
+};
+async function pollStatus(id){
+  let tries=0;
+  const iv=setInterval(async()=>{
+    tries++;
+    try{
+      const r=await fetch('/api/backup/status?id='+encodeURIComponent(id),{headers:H});
+      const d=await r.json();
+      if(d.status==='done'){clearInterval(iv);toast('Restauração concluída ✅');setTimeout(load,1500);}
+      else if(d.status==='error'){clearInterval(iv);toast('Restauração falhou ❌ — veja o log.');}
+      else if(tries>40){clearInterval(iv);}
+    }catch(_){ }
+  },3000);
+}
+document.getElementById('btnReload').onclick=load;
+document.getElementById('btnRun').onclick=async()=>{
+  const b=document.getElementById('btnRun'); b.disabled=true; b.textContent='Solicitando…';
+  try{ const r=await fetch('/api/backup/run',{method:'POST',headers:H}); const d=await r.json();
+    toast(d.message||'Backup solicitado.'); setTimeout(load,3000);
+  }catch(e){toast('Erro: '+e.message);} finally{ setTimeout(()=>{b.disabled=false;b.textContent='Fazer backup agora';},2000);} };
+document.getElementById('btnLog').onclick=async()=>{
+  const box=document.getElementById('logBox'); box.style.display='block';
+  try{ const r=await fetch('/api/backup/log',{headers:H}); const d=await r.json(); document.getElementById('logPre').textContent=d.log||'(vazio)'; }catch(e){document.getElementById('logPre').textContent='Erro: '+e.message;} };
+if(TK) load();
+</script>
+</body>
+</html>

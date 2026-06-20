@@ -1,0 +1,20 @@
+{
+  "name": "autoflow-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AutoFlow API (Express + JWT + MongoDB + BullMQ). package.json reconstruído a partir dos imports — confira contra o servidor.",
+  "scripts": { "start": "node src/server.js" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.7.0",
+    "cors": "^2.8.5",
+    "cron-parser": "^4.9.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.4.0"
+  }
+}
