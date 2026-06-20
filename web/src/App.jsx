@@ -663,6 +663,7 @@ function TemplatesView({ toast }) {
    ════════════════════════════════════════════════════════════════════ */
 function AutoReplyView({ toast }) {
   const [list, setList] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [mode, setMode] = useState("all"); // all | specific  (botões Todos / Puxar)
@@ -674,8 +675,29 @@ function AutoReplyView({ toast }) {
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
 
-  const load = useCallback(async () => { try { setList(await api("auto-reply")); } catch { /* */ } }, []);
+  const load = useCallback(async () => {
+    try {
+      const [ar, cs] = await Promise.all([api("auto-reply"), api("contacts").catch(() => [])]);
+      setList(Array.isArray(ar) ? ar : []);
+      setContacts(Array.isArray(cs) ? cs : []);
+    } catch { /* */ }
+  }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Nome do cliente pela SUA AGENDA (Clientes) — fonte da verdade, estavel.
+  const agendaName = (phone) => {
+    const d = String(phone || "").replace(/\D/g, "");
+    if (!d) return "";
+    const variants = new Set([d]);
+    if (d.length === 13 && d.startsWith("55") && d[4] === "9") variants.add(d.slice(0, 4) + d.slice(5));
+    if (d.length === 12 && d.startsWith("55")) variants.add(d.slice(0, 4) + "9" + d.slice(4));
+    const tail = d.slice(-8);
+    const c = contacts.find((x) => {
+      const p = String(x.phoneE164 || x.phone || "").replace(/\D/g, "");
+      return variants.has(p) || (p.length >= 8 && p.slice(-8) === tail);
+    });
+    return c && c.name ? c.name.trim() : "";
+  };
 
   function openNew() { setEditing(null); setForm(blank); setMode("all"); setOpen(true); }
   function openEdit(r) {
@@ -734,7 +756,7 @@ function AutoReplyView({ toast }) {
             </div>
             <div className="bg-ink border border-hair rounded-xl p-3 text-sm text-mist leading-relaxed min-h-[56px]">{y.reply}</div>
             <div className="flex items-center gap-4 text-xs text-mut flex-wrap">
-              <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{y.targetPhone ? (y.targetName || y.targetPhone) : "Todos os clientes"}</span>
+              <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{y.targetPhone ? (agendaName(y.targetPhone) || y.targetName || y.targetPhone) : "Todos os clientes"}</span>
               <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{y.startTime || "00:00"} - {y.endTime || "23:59"}</span>
               <span className={cn("flex items-center gap-1 font-medium", y.active ? "text-signal" : "text-mut")}>
                 <span className={cn("w-1.5 h-1.5 rounded-full", y.active ? "bg-emerald-400" : "bg-hair-2")} />{y.active ? "Ativo" : "Inativo"}
