@@ -2,7 +2,7 @@
 # AutoFlow CADENCE — stack COMPLETO e INDEPENDENTE
 # Não compartilha NADA com o 4025: banco, fila, gateway, sessão e dados
 # são todos próprios. Deploy: Hostinger Compose URL  OU  git clone + compose.
-# Containers/volumes com prefixo afcad_  ·  web na porta 4045.
+# Containers/volumes com prefixo afcad_  ·  web na porta 4050.
 # A senha/segredo têm padrão embutido — TROQUE depois do 1º login.
 # ════════════════════════════════════════════════════════════════════
 services:
@@ -87,7 +87,7 @@ services:
   web:
     build: ./web                 # SPA Cadence + nginx (proxy /api -> api:3000)
     container_name: afcad_web
-    ports: ["4045:80"]
+    ports: ["4050:80"]
     depends_on: [api]
     restart: unless-stopped
     networks: [afcad-net]

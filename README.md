@@ -1,126 +1,170 @@
-# WhatsApp AutoFlow Claude — edição Premium
+<div align="center">
 
-Stack completa em Docker Compose: frontend (React/Vite, tema **Premium**) + backend (API Express, Worker BullMQ, WA Gateway Baileys) + MongoDB + Redis, atrás de um **Caddy com HTTPS automático**. Pronta para `git push` → `docker compose up -d` numa VPS.
+# AutoFlow **Cadence**
 
-## Status
+**Plataforma auto-hospedada de automação de WhatsApp** — respostas automáticas, agendamentos, esteira de onboarding, assinaturas e disparos recorrentes, com um console operacional de visual premium.
 
-| Parte | Estado |
-|-------|--------|
-| `web/` (frontend SPA) | reconstruído; **novo tema Premium** (violeta/ametista + selo PREMIUM); builda OK |
-| `backend/api/` | fonte recuperada + `package.json` reconstruído + **rate-limit no login** |
-| `backend/worker/` | fonte recuperada + `package.json` reconstruído |
-| `backend/wa-gateway/` | **reconstruído** (Baileys) — builda e responde aos contratos |
-| `caddy/` | reverse proxy + **HTTPS automático** (Let's Encrypt) |
-| `.github/workflows/ci.yml` | CI: build do front + checagem do backend + validação do compose |
-| `docker-compose.yml` | produção, com **healthchecks** e `web` só no localhost |
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![Node](https://img.shields.io/badge/Node-20-339933?logo=nodedotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-Vite-61DAFB?logo=react&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-6-47A248?logo=mongodb&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
 
-## Identidade visual (como distinguir da versão antiga)
+</div>
 
-A versão antiga usava acento **azul/índigo**. Esta usa um tema **Premium violeta/ametista** com fundo quase-preto e brilho sutil, logo com gradiente e um selo dourado **PREMIUM** ao lado do nome (na sidebar e no login). Bateu o olho → é a nova.
+---
 
-## Estrutura
+## Visão geral
 
-```
-docker-compose.yml          PRODUÇÃO — 7 serviços (inclui Caddy)
-.env.example                modelo de variáveis (copie para .env)
-caddy/Caddyfile             proxy + HTTPS automático
-.github/workflows/ci.yml    integração contínua
-web/                        frontend Vite + nginx (tema Premium)
-backend/
-  api/                      Express + JWT + Mongo + BullMQ (+ rate-limit login)
-  worker/                   consumidor BullMQ
-  wa-gateway/               integração Baileys/WhatsApp
-```
+O **AutoFlow Cadence** é um stack completo em Docker Compose que conecta um número de WhatsApp e automatiza a comunicação com seus contatos: dispara mensagens agendadas e recorrentes, responde automaticamente por palavra-chave, conduz fluxos de onboarding em etapas (a *esteira*) e acompanha vencimentos de assinatura.
+
+É **totalmente independente** — banco de dados, fila, gateway, sessão de WhatsApp e dados são todos próprios. Não depende de nenhum serviço externo nem de outra instalação.
+
+A interface adota a identidade **Cadence**: um console de operações em tema escuro, com acento jade, tipografia *Bricolage Grotesque* e elementos de sinal animados que reagem ao estado da conexão.
+
+---
+
+## Principais recursos
+
+| Área | O que faz |
+|------|-----------|
+| **Visão Geral** | Painel com leituras clicáveis (automações, respostas auto, clientes, templates, esteira) e feeds de próximas automações e atividade recente. |
+| **Clientes** | Cadastro de contatos com dados de assinatura, busca, e **Exportar/Importar** (`.json`). |
+| **Esteira** | Onboarding em etapas (texto, **áudio**, imagem, vídeo, documento), mensagens semanais e renovação. |
+| **Automações** | Disparos recorrentes via expressão *cron* (diário, semanal, mensal, intervalo). |
+| **Respostas Auto** | Auto-resposta por palavra-chave, com janela de horário e correspondência tolerante. |
+| **Agendamentos** | Mensagens únicas para data e hora específicas. |
+| **Templates** | Mensagens reutilizáveis com a variável `{{nome}}`. |
+| **Assinaturas** | Métricas de vencimento, textos de aviso (7d/1d/no dia) e inclusão de assinantes. |
+| **Auditoria** | Registro das ações do sistema. |
+| **WhatsApp** | Conexão por QR Code, status em tempo real, lista de contatos e desconexão de sessão. |
+
+### Personalização `{{nome}}`
+A variável `{{nome}}` é resolvida pelo **primeiro nome da sua agenda** (coleção de contatos), com tolerância ao 9º dígito brasileiro — e não pelo nome do perfil público do WhatsApp. Aplicada em todos os caminhos de envio.
+
+### Confiabilidade do gateway
+O gateway usa reconexão *single-flight* com *backoff* exponencial e limpeza de ouvintes (evita a "tempestade de reconexão" que derruba sessões), além de reenvio com retentativas no webhook (evita perder respostas automáticas por falha pontual).
+
+---
 
 ## Arquitetura
 
 ```
-Caddy (HTTPS :80/:443)  -->  Web (nginx + SPA)  --/api-->  API (Express + JWT)  -->  MongoDB
-                                                                  |                  Redis (BullMQ)
-                                                                  v
-                                                         Worker  -->  WA Gateway (Baileys)  -->  WhatsApp
+                         ┌──────────────────────────────────────────────┐
+   Navegador  ──:4050──▶ │  web (nginx + SPA React/Vite — tema Cadence)  │
+                         │     /api/*  ──proxy──▶  api:3000              │
+                         └───────────────┬──────────────────────────────┘
+                                         │
+        ┌────────────────────────────────┼─────────────────────────────┐
+        ▼                                ▼                              ▼
+┌───────────────┐              ┌───────────────────┐          ┌──────────────────┐
+│ api (Express) │◀──webhook────│ wa-gateway        │          │ worker (BullMQ)  │
+│ JWT · REST    │  /internal/  │ Baileys · QR/sessão│          │ disparos + delay │
+└───────┬───────┘   message    └─────────┬─────────┘          └────────┬─────────┘
+        │                                │ (volume: sessão)            │
+        ▼                                ▼                             ▼
+   ┌─────────┐                                                    ┌─────────┐
+   │ MongoDB │◀───────────────── dados / fila de mensagens ──────▶│  Redis  │
+   └─────────┘                                                    └─────────┘
 ```
 
-O Caddy é a única porta pública. O `web` escuta só em `127.0.0.1:3025` (debug via túnel SSH). Mongo e Redis ficam apenas na rede interna do compose.
+| Serviço | Imagem / Base | Função | Porta |
+|---------|---------------|--------|-------|
+| `afcad_web` | nginx + React/Vite | SPA Cadence + proxy `/api` | **4050** → 80 |
+| `afcad_api` | Node 20 / Express | API REST, autenticação JWT, regras de negócio | 3000 (interna) |
+| `afcad_worker` | Node 20 / BullMQ | Processa a fila e envia com atraso anti-bloqueio | — |
+| `afcad_gateway` | Node 20 / Baileys | Conexão com o WhatsApp, QR e sessão | 3333 (interna) |
+| `afcad_mongo` | mongo:6 | Banco de dados | 27017 (interna) |
+| `afcad_redis` | redis:7 | Fila de mensagens | 6379 (interna) |
+
+Rede interna: `afcad-net` · Volumes persistentes: `afcad_mongo`, `afcad_redis`, `afcad_wa_auth` (sessão), `afcad_backups`.
 
 ---
 
-## 1) Subir no GitHub (repo privado)
+## Deploy
 
+### Opção A — Hostinger (Docker Manager · Compose URL)
+1. Crie um repositório no GitHub e suba o conteúdo desta pasta **na raiz** (o `docker-compose.yml` junto de `backend/` e `web/` — não dentro de subpasta).
+2. No hPanel: **Gerenciador Docker → Criar → Compose** e cole a URL *raw* do compose:
+   ```
+   https://github.com/<usuario>/<repo>/blob/main/docker-compose.yml
+   ```
+3. Nome do projeto: `autoflow_cadence` → **Implantar**. A primeira build leva alguns minutos.
+
+### Opção B — VPS por terminal
 ```bash
-cd /caminho/do/repo
-git init
-git add .
-git commit -m "Edição Premium: stack completa + Caddy/HTTPS + CI + healthchecks"
-git branch -M main
-git remote add origin git@github.com:SUA_ORG/whatsapp-autoflow.git   # PRIVADO
-git push -u origin main
-```
-
-`.gitignore` protege `node_modules/`, `dist/`, `.env` e a sessão do WhatsApp. **O `.env` nunca vai pro Git.**
-
-## 2) Deploy na VPS
-
-```bash
-git clone git@github.com:SUA_ORG/whatsapp-autoflow.git
-cd whatsapp-autoflow
-cp .env.example .env && nano .env
-#   - SITE_ADDRESS=app.seudominio.com   (HTTPS automático)  ou  :80 (só HTTP)
-#   - JWT_SECRET = O MESMO da produção atual (senão os logins existentes caem)
-#   - ADMIN_EMAIL / ADMIN_PASSWORD
-
-# (VPS nova) restaure os volumes do backup ANTES de subir — ver "Migração"
-
+git clone https://github.com/<usuario>/<repo>.git autoflow-cadence
+cd autoflow-cadence
 docker compose up -d --build
-docker compose ps          # confira os healthchecks "healthy"
-```
-
-- Com domínio em `SITE_ADDRESS`, o Caddy emite o certificado sozinho (aponte o DNS do domínio para o IP da VPS e libere as portas 80/443).
-- **Primeira conexão do WhatsApp**: abra a tela **WhatsApp** (ou `GET /api/whatsapp/qr`) e escaneie. Se restaurou o volume `wa_auth`, já entra conectado sem QR.
-
-## 3) Atualizações
-
-```bash
-git pull
-docker compose up -d --build web     # ou o serviço alterado
 ```
 
 ---
 
-## Reconfiguração operacional aplicada nesta versão
+## Primeiro acesso
 
-- **Caddy + HTTPS automático** como entrada pública (`caddy/Caddyfile`, env `SITE_ADDRESS`).
-- **Healthchecks** em `api`, `wa-gateway` e `web` (via `/health` e nginx) — `depends_on`/`restart` mais confiáveis.
-- **`web` sem porta pública** (só `127.0.0.1:3025`); Mongo/Redis só na rede interna.
-- **Rate-limit no `/api/auth/login`** (20 tentativas / 15 min por IP) — aplicado no `server.js`, sem tocar no `routes.js` recuperado.
-- **CI (GitHub Actions)**: a cada push/PR roda build do front, checagem de sintaxe do backend e `docker compose config`.
-- **Lockfiles** versionados (`web` e `wa-gateway`) para builds reproduzíveis.
+| | |
+|---|---|
+| **URL** | `http://SEU_IP:4050` |
+| **Login inicial** | `admin@admin.com` / `Cadence#2026` |
 
-> Ainda recomendado: trocar `JWT_SECRET`/senha admin por valores fortes; somar uma **cópia externa** dos backups (object storage) ao `backup.sh`; e testar a restauração na stack isolada (`docker-compose.isolated.yml` da entrega anterior).
+1. Faça login e **troque a senha** na aba **Conta**.
+2. Vá em **WhatsApp** e **escaneie o QR Code** para conectar.
 
-## Migração de VPS / recuperação de desastre
+> ⚠️ **Sessão de WhatsApp:** um número fica ativo em **uma sessão por vez**. Ao escanear com um número que já está em outra instância, a sessão migra para cá. Para testar sem afetar uma instalação existente, use um número dedicado.
 
-1. VPS nova: Docker + Compose.
-2. `git clone` (a fonte agora está versionada — foi a falta disso que causou a perda original).
-3. Restaurar os **dois volumes críticos**:
-   - **`mongo_data`** (banco):
-     ```bash
-     docker compose up -d mongo
-     docker exec -i autoflow2_mongo mongorestore --archive --gzip --drop \
-       --nsInclude='wa_admin.*' < /caminho/backup/mongo/wa_admin.archive.gz
-     ```
-   - **`wa_auth`** (sessão do WhatsApp — evita re-escanear o QR):
-     ```bash
-     docker volume create whatsapp-autoflow_wa_auth
-     docker run --rm -v whatsapp-autoflow_wa_auth:/dest -v /caminho/backup/volumes:/src \
-       alpine sh -c "cd /dest && tar xzf /src/wa_auth.tar.gz"
-     ```
-4. Colocar o `.env` (do cofre) no lugar.
-5. `docker compose up -d`.
+---
 
-## Notas da reconstrução
+## Configuração (variáveis de ambiente)
 
-- Frontend: 9 telas refeitas a partir do bundle + contratos do backend.
-- WA Gateway: base reconstruída em Baileys (contratos `/status` `/qr` `/contacts` `/send` `/send-media` + webhook). Para paridade exata, veja `backend/wa-gateway/LEIA-ANTES-DE-SUBIR.md`.
-- Fixes de backend preservados: match de telefone pelos últimos 8 dígitos e contatos LID `uncertain`.
-- Melhoria de UI: campo de número manual explícito no modal de Resposta Automática, sem remover a busca por nome.
+Os valores têm padrões embutidos no `docker-compose.yml`. Para produção, defina-os via `.env` (ou no painel) e **troque os segredos**.
+
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `JWT_SECRET` | *(placeholder)* | Segredo de assinatura dos tokens. **Troque** por valor aleatório (`openssl rand -hex 32`). |
+| `ADMIN_EMAIL` | `admin@admin.com` | E-mail do admin inicial. |
+| `ADMIN_PASSWORD` | `Cadence#2026` | Senha inicial (altere após o 1º login). |
+| `MIN_MESSAGE_DELAY_MS` | `2000` | Atraso mínimo entre envios (anti-bloqueio). |
+| `JITTER_MS` | `1000` | Variação aleatória somada ao atraso. |
+| `NOTICE_7D` / `NOTICE_1D` / `NOTICE_TODAY` | *(textos)* | Avisos de vencimento de assinatura. |
+
+---
+
+## Estrutura do projeto
+
+```
+.
+├── docker-compose.yml        # orquestração dos 6 serviços (independente)
+├── backend/
+│   ├── api/                  # API Express (REST + JWT + Mongo + BullMQ)
+│   ├── worker/               # consumidor da fila (envios com atraso)
+│   └── wa-gateway/           # gateway Baileys (sessão WhatsApp + webhook)
+└── web/                      # SPA React/Vite (tema Cadence) + nginx
+```
+
+---
+
+## Migração de dados
+
+A base começa **vazia**. Para trazer dados de uma instalação anterior:
+- **Por função:** use **Exportar** na origem e **Importar** aqui, aba por aba (Clientes, Templates, Respostas Auto, Agendamentos, Assinaturas).
+- **Completa:** restauração do dump do MongoDB para o volume `afcad_mongo`.
+
+---
+
+## Roadmap
+
+- [ ] Endpoint de **desconexão** de sessão na API + gateway (botão já existe na interface).
+- [ ] **Áudio de verdade**: rota `/upload-media` na API + conversão `ffmpeg → opus (ptt)` no gateway.
+- [ ] **HTTPS** com domínio (proxy reverso / certificado automático).
+
+---
+
+## Uso responsável
+
+Esta ferramenta automatiza o envio de mensagens por uma sessão do WhatsApp. Use-a **apenas** com destinatários que consentiram em receber suas mensagens, respeitando os Termos de Serviço do WhatsApp e a legislação aplicável (incluindo a LGPD). Não a utilize para spam ou para se passar por terceiros.
+
+---
+
+## Stack técnica
+
+Node.js 20 · Express · MongoDB 6 · Redis 7 · BullMQ · Baileys · React 18 · Vite · Tailwind CSS · nginx · Docker Compose.

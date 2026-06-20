@@ -21,7 +21,7 @@ banco, fila, gateway, **sessão de WhatsApp** e dados são TODOS próprios.
 4. Nome do projeto: `autoflow_cadence`. Deploy.
 
 ## Primeiro acesso
-- Abre em:  http://2.25.145.110:4045
+- Abre em:  http://2.25.145.110:4050
 - Login:  admin@admin.com  /  Cadence#2026   (TROQUE depois, na aba Conta)
 - Aba **WhatsApp** → escaneie o **QR novo**.
 
