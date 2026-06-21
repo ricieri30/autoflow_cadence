@@ -665,7 +665,7 @@ const uploadMedia = multer({
       cb(null, crypto.randomBytes(8).toString("hex") + ext);
     },
   }),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 32 * 1024 * 1024 },
 });
 router.post("/upload-media", auth, uploadMedia.single("file"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "sem_arquivo" });
