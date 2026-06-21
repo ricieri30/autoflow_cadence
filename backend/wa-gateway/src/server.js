@@ -231,7 +231,7 @@ async function start() {
         rememberContact(remoteJid, pushName);
 
         const realDigits = remoteJid.endsWith("@s.whatsapp.net") ? phoneFromJid(remoteJid) : phoneFromJid(msg.key?.senderPn || "");
-        const lidDigits = isLid(remoteJid) ? phoneFromJid(remoteJid) : phoneFromJid(msg.key?.senderPn || "");
+        const lidDigits = isLid(remoteJid) ? phoneFromJid(remoteJid) : "";
 
         await postWebhook({
           from: remoteJid,
