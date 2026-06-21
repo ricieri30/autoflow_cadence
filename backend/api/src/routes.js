@@ -709,7 +709,7 @@ router.post("/internal/message", async (req, res) => {
     console.log(`✅ Regra "${matched.keyword}" ativada para ${phone}`);
     try {
       const agenda = await agendaFirstName(candidates);
-      const name = agenda || firstName(pushName) || firstName(matched.targetName) || phone;
+      const name = agenda || firstName(matched.targetName) || phone;
       const replyText = render(matched.reply || "", { nome: name });
       const sendResp = await fetch(`${process.env.WA_GATEWAY_URL}/send`, {
         method: "POST",
