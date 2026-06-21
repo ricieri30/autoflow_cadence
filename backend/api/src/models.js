@@ -80,7 +80,7 @@ const OnboardingConfigSchema = new mongoose.Schema({
   delayMin: { type: Number, default: 30 },
   steps: [{
     order:          { type: Number, required: true },
-    type:           { type: String, enum: ["text","image","video","document"], default: "text" },
+        type: { type: String, enum: ["text","image","video","audio","document"], default: "text" },
     content:        { type: String, default: "" },
     mediaUrl:       { type: String, default: "" },
     delayAfterPrev: { type: Number, default: 0 },
