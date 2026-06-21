@@ -10,7 +10,7 @@ import { User, Template } from "./models.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "32mb" }));
 
 // Hardening: limita tentativas de login (anti brute-force). 20 req / 15 min por IP.
 app.use("/api/auth/login", rateLimit({
