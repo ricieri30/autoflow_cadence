@@ -689,7 +689,7 @@ router.post("/internal/message", async (req, res) => {
     const isLid = /@lid$/i.test(String(from));
     const isGroup = /@g\.us$/i.test(String(from));
     const realPhone = normPhone(fromReal) || (isLid ? "" : phone);
-    if (!isGroup && realPhone && realPhone.length >= 10) {
+    if (!isGroup && /^55\d{10,11}$/.test(realPhone)) {
       const exists = await Contact.findOne({ phoneE164: { $in: brVariants(realPhone) } });
       if (!exists) {
         await Contact.create({ phoneE164: realPhone, name: (pushName || "").trim(), tags: [], optIn: true });
