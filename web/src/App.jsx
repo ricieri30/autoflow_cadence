@@ -12,7 +12,7 @@ import { api, getToken, setToken, clearToken } from "./api.js";
    ════════════════════════════════════════════════════════════════════ */
 
 // concat condicional de classes (helper `A` no bundle)
-function cn(...xs) { return xs.filter(Booleanh).join(" "); }
+function cn(...xs) { return xs.filter(Boolean).join(" "); }
 
 // Resolve o nome do cliente pela SUA agenda (Clientes). Tolera 9º dígito BR e últimos 8.
 function agendaResolve(contacts, phone) {
