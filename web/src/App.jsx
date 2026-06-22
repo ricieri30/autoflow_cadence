@@ -1301,7 +1301,7 @@ function PipelineView({ toast }) {
             </div>
           ))}
           <div className="bg-raised border border-hair rounded-2xl p-4 space-y-2">
-            <div className="text-sm font-semibold text-bone">Mensagem de renovação</div>
+            <div className="text-sm font-semibold text-bone">Último dia</div>
             <textarea className={cn(INPUT, "min-h-[80px] resize-y")} value={cfg.renewalMessage || ""} onChange={(e) => setCfg((c) => ({ ...c, renewalMessage: e.target.value }))} placeholder="Olá {{nome}}! Sua jornada terminou — bora renovar?" />
           </div>
           <button onClick={saveCfg} className="rounded-xl bg-signal hover:opacity-90 text-ink py-2.5 px-6 font-medium text-sm transition-colors">Salvar mensagens</button>
