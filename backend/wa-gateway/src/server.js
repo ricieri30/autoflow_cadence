@@ -216,12 +216,22 @@ async function start() {
     for (const c of arr) rememberContact(c.id, c.name || c.notify || c.verifiedName);
   });
 
-  // mensagens recebidas -> webhook
+  const _seenMsgIds = new Map();
+function _isDupMsg(id){
+  if(!id) return false;
+  var now = Date.now();
+  for (var ent of _seenMsgIds) { if (now - ent[1] > 300000) _seenMsgIds.delete(ent[0]); }
+  if (_seenMsgIds.has(id)) return true;
+  _seenMsgIds.set(id, now);
+  return false;
+}
+// mensagens recebidas -> webhook
   sock.ev.on("messages.upsert", async ({ messages = [], type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
       try {
         if (!msg.message || msg.key.fromMe) continue;
+        if (_isDupMsg(msg.key.id)) continue;
         const remoteJid = msg.key.remoteJid || "";
         if (remoteJid === "status@broadcast" || remoteJid.endsWith("@g.us")) continue; // ignora status e grupos
         const text = extractText(msg);
