@@ -709,7 +709,7 @@ router.post("/internal/message", async (req, res) => {
     console.log(`✅ Regra "${matched.keyword}" ativada para ${phone}`);
     try {
       // AUTO_REPLY_DELAY: atraso humano aleatorio 25-35s antes de responder
-        const _arDelay = 25000 + Math.floor(Math.random() * 10001);
+        const _arDelay = 12000 + Math.floor(Math.random() * 8001);
         console.log("[auto-reply] aguardando " + (_arDelay/1000).toFixed(1) + "s para " + phone);
         await new Promise(function(r){ setTimeout(r, _arDelay); });
         const agenda = await agendaFirstName(candidates);
