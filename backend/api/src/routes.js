@@ -708,7 +708,7 @@ router.post("/internal/message", async (req, res) => {
   if (matched) {
     console.log(`✅ Regra "${matched.keyword}" ativada para ${phone}`);
     try {
-      // AUTO_REPLY_DELAY: atraso humano aleatorio 25-35s antes de responder
+      // AUTO_REPLY_DELAY: atraso humano aleatorio 12-20s antes de responder
         const _arDelay = 12000 + Math.floor(Math.random() * 8001);
         console.log("[auto-reply] aguardando " + (_arDelay/1000).toFixed(1) + "s para " + phone);
         await new Promise(function(r){ setTimeout(r, _arDelay); });
