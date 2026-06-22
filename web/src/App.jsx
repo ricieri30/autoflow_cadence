@@ -1367,6 +1367,7 @@ function PipelineView({ toast }) {
    TELA: ASSINATURAS (subs)
    ════════════════════════════════════════════════════════════════════ */
 function SubscriptionsView({ toast }) {
+  const agenda = useAgenda();
   const [m, setM] = useState(null);
   const [notif, setNotif] = useState(() => {
     try { const c = localStorage.getItem("autoflow_notif_texts"); if (c) return JSON.parse(c); } catch { /* */ }
