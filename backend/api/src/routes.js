@@ -233,6 +233,13 @@ router.get("/whatsapp/qr", auth, async (_req, res) => {
   res.status(r.status).json(await r.json());
 });
 
+router.post("/whatsapp/disconnect", auth, async (_req, res) => {
+  try {
+    const r = await fetch(`${process.env.WA_GATEWAY_URL}/logout`, { method: "POST" });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+
 // GET /whatsapp/contacts?q=busca&limit=50
 router.get("/whatsapp/contacts", auth, async (req, res) => {
   try {
