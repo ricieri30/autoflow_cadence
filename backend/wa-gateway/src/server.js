@@ -68,6 +68,7 @@ let _decryptFails = 0;
 let _healthFails = 0;
 let _lastAlertAt = 0;
 let _zombie = false;
+let _loggingOut = false;
 const ALERT_COOLDOWN_MS = 10*60*1000;
 const HEALTH_INTERVAL_MS = 60*1000;
 const DECRYPT_FAIL_LIMIT = 30;          // starting | qr | connected | disconnected
@@ -211,6 +212,7 @@ function scheduleReconnect() {
 
 // ── conexão Baileys ─────────────────────────────────────────────────
 async function start() {
+  _loggingOut = false;
   if (sock) { try { sock.ev.removeAllListeners(); } catch (e) { /* ignora */ } } // evita ouvintes órfãos
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
@@ -247,7 +249,7 @@ async function start() {
       status = "disconnected";
       logger.warn(`conexão fechada (code=${code}) loggedOut=${loggedOut}`);
       if (loggedOut) qrDataUrl = null; // sessão encerrada -> próximo start gera novo QR
-      scheduleReconnect(); // single-flight + backoff (sem tempestade)
+      if (!loggedOut && !_loggingOut) scheduleReconnect(); // nao reconecta em logout
     }
   });
 
@@ -364,15 +366,15 @@ app.post("/send-media", async (req, res) => {
 });
 
 app.post("/logout", async (_req, res) => {
-  const _fs = require("fs");
   try {
+    _loggingOut = true;
     logger.warn("logout solicitado via API");
-    try { if (sock && sock.logout) { await sock.logout(); } } catch (e) { logger.warn("sock.logout falhou: " + e.message); }
+    res.json({ ok: true, message: "sessao encerrada, gerando novo QR" });
+    try { if (sock && sock.logout) { sock.logout().catch(()=>{}); } } catch (e) { logger.warn("sock.logout falhou: " + e.message); }
     try { if (sock && sock.end) sock.end(new Error("logout")); } catch (e) {}
-    try { _fs.rmSync(AUTH_DIR, { recursive: true, force: true }); _fs.mkdirSync(AUTH_DIR, { recursive: true }); } catch (e) { logger.error("falha limpando auth: " + e.message); }
+    try { for (const f of fs.readdirSync(AUTH_DIR)) fs.rmSync(AUTH_DIR + "/" + f, { recursive: true, force: true }); } catch (e) { logger.error("falha limpando auth: " + e.message); }
     sock = null; status = "disconnected"; qrDataUrl = null; _zombie = false;
     setTimeout(() => { start().catch((e) => { logger.error("falha ao reiniciar pos-logout: " + e.message); }); }, 800);
-    res.json({ ok: true, message: "sessao encerrada, gerando novo QR" });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
