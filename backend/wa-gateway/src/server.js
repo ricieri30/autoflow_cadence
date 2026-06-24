@@ -60,7 +60,17 @@ const logger = pino({ level: process.env.LOG_LEVEL || "warn" });
 
 // ── estado em memória ──────────────────────────────────────────────
 let sock = null;
-let status = "starting";          // starting | qr | connected | disconnected
+let status = "starting";
+const ADMIN_ALERT_JID = "5515988008487@s.whatsapp.net";
+let _lastInboundAt = Date.now();
+let _lastHealthyAt = Date.now();
+let _decryptFails = 0;
+let _healthFails = 0;
+let _lastAlertAt = 0;
+let _zombie = false;
+const ALERT_COOLDOWN_MS = 10*60*1000;
+const HEALTH_INTERVAL_MS = 60*1000;
+const DECRYPT_FAIL_LIMIT = 30;          // starting | qr | connected | disconnected
 let qrDataUrl = null;             // data URL do último QR
 const contacts = new Map();       // jid -> { name, phone, uncertain }
 
@@ -153,6 +163,41 @@ async function postWebhook(payload, attempt = 0) {
 // Reconexão single-flight com backoff — impede a tempestade de reconexões (oscilação)
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+async function _sendAdminAlert(reason) {
+  const now = Date.now();
+  if (now - _lastAlertAt < ALERT_COOLDOWN_MS) return;
+  _lastAlertAt = now;
+  try {
+    if (sock && status === "connected") {
+      await sock.sendMessage(ADMIN_ALERT_JID, { text: "[ALERTA] AutoFlow Cadence: possivel MODO ZUMBI detectado (" + reason + "). A automacao pode nao estar respondendo. Verifique a Conexao WhatsApp." });
+      logger.warn("alerta admin enviado: " + reason);
+    } else {
+      logger.warn("zumbi detectado mas sock indisponivel p/ alerta: " + reason);
+    }
+  } catch (e) { logger.error("falha ao enviar alerta admin: " + e.message); }
+}
+async function _healthCheck() {
+  try {
+    if (status !== "connected" || !sock) { return; }
+    const idleMs = Date.now() - _lastHealthyAt;
+    let ok = false;
+    try { await sock.query({ tag: "iq", attrs: { type: "get", xmlns: "w:p", to: "@s.whatsapp.net" } }); ok = true; }
+    catch (e) { ok = false; }
+    if (ok) { _healthFails = 0; _lastHealthyAt = Date.now(); if (_zombie) { _zombie = false; logger.warn("saude restabelecida"); } return; }
+    _healthFails++;
+    logger.warn("health-check falhou (" + _healthFails + ") idle=" + Math.round(idleMs/1000) + "s");
+    if (_healthFails >= 2) {
+      _zombie = true;
+      _sendAdminAlert("health-check sem resposta");
+      logger.warn("watchdog: forcando reconexao por modo zumbi");
+      _healthFails = 0;
+      try { if (sock && sock.end) sock.end(new Error("watchdog-restart")); } catch (e) {}
+      scheduleReconnect();
+    }
+  } catch (e) { logger.error("erro no health-check: " + e.message); }
+}
+setInterval(_healthCheck, HEALTH_INTERVAL_MS);
+
 function scheduleReconnect() {
   if (reconnectTimer) return; // já há um reconnect agendado
   const delay = Math.min(30000, 1500 * 2 ** reconnectAttempts);
@@ -194,6 +239,7 @@ async function start() {
       qrDataUrl = null;
       reconnectAttempts = 0; // conexão estável -> zera o backoff
       logger.warn("✅ WhatsApp conectado.");
+      _lastHealthyAt = Date.now(); _healthFails = 0; _decryptFails = 0; _zombie = false;
     }
     if (connection === "close") {
       const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
@@ -228,6 +274,7 @@ function _isDupMsg(id){
 // mensagens recebidas -> webhook
   sock.ev.on("messages.upsert", async ({ messages = [], type }) => {
     if (type !== "notify") return;
+    _lastInboundAt = Date.now(); _lastHealthyAt = Date.now(); _decryptFails = 0; _zombie = false;
     for (const msg of messages) {
       try {
         if (!msg.message || msg.key.fromMe) continue;
@@ -299,7 +346,7 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => res.json({ ok: true, status }));
-app.get("/status", (_req, res) => res.json({ status, hasQr: !!qrDataUrl }));
+app.get("/status", (_req, res) => res.json({ status, hasQr: !!qrDataUrl, zombie: _zombie, lastInboundAgoSec: Math.round((Date.now()-_lastInboundAt)/1000), lastHealthyAgoSec: Math.round((Date.now()-_lastHealthyAt)/1000), healthy: !_zombie && status === "connected" }));
 app.get("/qr", (_req, res) => res.json({ qr: qrDataUrl, status }));
 
 app.get("/contacts", (req, res) => {
@@ -314,6 +361,19 @@ app.post("/send", async (req, res) => {
 app.post("/send-media", async (req, res) => {
   try { res.json(await sendMedia(req.body || {})); }
   catch (e) { res.status(e.message === "not_connected" ? 409 : 500).json({ error: e.message }); }
+});
+
+app.post("/logout", async (_req, res) => {
+  const _fs = require("fs");
+  try {
+    logger.warn("logout solicitado via API");
+    try { if (sock && sock.logout) { await sock.logout(); } } catch (e) { logger.warn("sock.logout falhou: " + e.message); }
+    try { if (sock && sock.end) sock.end(new Error("logout")); } catch (e) {}
+    try { _fs.rmSync(AUTH_DIR, { recursive: true, force: true }); _fs.mkdirSync(AUTH_DIR, { recursive: true }); } catch (e) { logger.error("falha limpando auth: " + e.message); }
+    sock = null; status = "disconnected"; qrDataUrl = null; _zombie = false;
+    setTimeout(() => { start().catch((e) => { logger.error("falha ao reiniciar pos-logout: " + e.message); }); }, 800);
+    res.json({ ok: true, message: "sessao encerrada, gerando novo QR" });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 app.listen(PORT, () => logger.warn(`✅ WA Gateway :${PORT}`));
