@@ -331,6 +331,36 @@ function buildCron(cfg) {
   return cfg.intervalUnit === "hours" ? `${m} */${every} * * *` : `*/${every} * * * *`;
 }
 
+function cfgFromPattern(pattern) {
+  const out = {};
+  const p = String(pattern || "").trim();
+  const f = p.split(/\s+/);
+  if (f.length !== 5) return out;
+  const [min, hr, dom, mon, dow] = f;
+  const two = (n) => String(n).padStart(2, "0");
+  if (min.startsWith("*/") && hr === "*" && dom === "*" && mon === "*" && dow === "*") {
+    out.repeatKind = "interval"; out.intervalUnit = "minutes";
+    out.intervalEvery = parseInt(min.slice(2), 10) || 1; return out;
+  }
+  if (hr.startsWith("*/") && dom === "*" && mon === "*" && dow === "*") {
+    out.repeatKind = "interval"; out.intervalUnit = "hours";
+    out.intervalEvery = parseInt(hr.slice(2), 10) || 1;
+    out.time = two(parseInt(min, 10) || 0) + ":00"; return out;
+  }
+  const h = parseInt(hr, 10); const m = parseInt(min, 10);
+  if (!isNaN(h) && !isNaN(m)) out.time = two(h) + ":" + two(m);
+  if (dom === "*" && dow !== "*") {
+    out.repeatKind = "weekly";
+    out.weeklyDays = dow.split(",").map((x) => parseInt(x, 10)).filter((x) => !isNaN(x));
+    if (!out.weeklyDays.length) out.weeklyDays = [1];
+    return out;
+  }
+  if (dom !== "*" && dow === "*") {
+    out.repeatKind = "monthly"; out.monthlyDay = parseInt(dom, 10) || 1; return out;
+  }
+  out.repeatKind = "daily"; return out;
+}
+
 const WEEKDAYS = [
   { v: 0, l: "Dom" }, { v: 1, l: "Seg" }, { v: 2, l: "Ter" }, { v: 3, l: "Qua" },
   { v: 4, l: "Qui" }, { v: 5, l: "Sex" }, { v: 6, l: "Sáb" },
@@ -915,7 +945,7 @@ function RecurringView({ toast }) {
   function openNew() { setEditing(null); setForm(blank); setOpen(true); }
   function openEdit(r) {
     setEditing(r);
-    setForm({ ...blank, name: r.name, templateId: r.templateId?._id || r.templateId || "", targetType: r.targetType, targetValue: r.targetValue || "", time: "09:00", enabled: r.enabled, quietStart: r.quietHours?.start || "21:00", quietEnd: r.quietHours?.end || "08:00", throttlePerMinute: r.throttlePerMinute || 10 });
+    setForm({ ...blank, name: r.name, templateId: r.templateId?._id || r.templateId || "", targetType: r.targetType, targetValue: r.targetValue || "", time: "09:00", enabled: r.enabled, quietStart: r.quietHours?.start || "21:00", quietEnd: r.quietHours?.end || "08:00", throttlePerMinute: r.throttlePerMinute || 10 , ...cfgFromPattern(r.pattern) });
     setOpen(true);
   }
   async function save() {
@@ -1408,8 +1438,6 @@ function SubscriptionsView({ toast }) {
   const [view, setView] = useState("expiring");
   const [rows, setRows] = useState([]);
   const [modal, setModal] = useState(null);
-  const [clients, setClients] = useState([]);
-  useEffect(() => { api("contacts").then((d) => setClients(Array.isArray(d) ? d : [])).catch(() => {}); }, []);
 
   useEffect(() => { api("subscriptions/metrics").then(setM).catch(() => {}); }, []);
   useEffect(() => {
@@ -1486,7 +1514,7 @@ function SubscriptionsView({ toast }) {
         {modal && (
           <div className="space-y-3 max-w-lg">
             <Field label="Nome"><input className={INPUT} value={modal.name} onChange={(e) => setModal({ ...modal, name: e.target.value })} /></Field>
-            <Field label="WhatsApp (com DDD)"><input className={INPUT} list="sub-client-list" value={modal.phone} onChange={(e) => { const v = e.target.value; const hit = clients.find((c) => c.phoneE164 === v); setModal({ ...modal, phone: v, name: hit ? hit.name : modal.name }); }} placeholder="5511999999999" /><datalist id="sub-client-list">{clients.map((c) => (<option key={c._id} value={c.phoneE164}>{c.name ? c.name + " — " + c.phoneE164 : c.phoneE164}</option>))}</datalist></Field>
+            <Field label="WhatsApp (com DDD)"><ContactPicker value={modal.phone} onChange={(v) => setModal({ ...modal, phone: v })} onPickContact={(c) => setModal({ ...modal, phone: c.phone || "", name: c.name || modal.name })} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Início"><input type="date" className={INPUT} value={modal.subscriptionStart} onChange={(e) => setModal({ ...modal, subscriptionStart: e.target.value })} /></Field>
               <Field label="Vencimento"><input type="date" className={INPUT} value={modal.subscriptionEnd} onChange={(e) => setModal({ ...modal, subscriptionEnd: e.target.value })} /></Field>
