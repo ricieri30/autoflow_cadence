@@ -826,7 +826,10 @@ router.post("/pipeline/contacts", auth, async (req, res) => {
   if (!phoneE164) return res.status(400).json({ error: "phoneE164_required" });
 
   // Verificar se já está na esteira
-  const existing = await PipelineContact.findOne({ contactId, status: { $nin: ["ended"] } });
+  const dupFilter = contactId
+      ? { contactId, status: { $nin: ["ended"] } }
+      : { phoneE164, status: { $nin: ["ended"] } };
+    const existing = await PipelineContact.findOne(dupFilter);
   if (existing) return res.status(409).json({ error: "already_in_pipeline", pipeline: existing });
 
   const enteredAt = new Date();
