@@ -1408,6 +1408,8 @@ function SubscriptionsView({ toast }) {
   const [view, setView] = useState("expiring");
   const [rows, setRows] = useState([]);
   const [modal, setModal] = useState(null);
+  const [clients, setClients] = useState([]);
+  useEffect(() => { api("contacts").then((d) => setClients(Array.isArray(d) ? d : [])).catch(() => {}); }, []);
 
   useEffect(() => { api("subscriptions/metrics").then(setM).catch(() => {}); }, []);
   useEffect(() => {
@@ -1484,7 +1486,7 @@ function SubscriptionsView({ toast }) {
         {modal && (
           <div className="space-y-3 max-w-lg">
             <Field label="Nome"><input className={INPUT} value={modal.name} onChange={(e) => setModal({ ...modal, name: e.target.value })} /></Field>
-            <Field label="WhatsApp (com DDD)"><input className={INPUT} value={modal.phone} onChange={(e) => setModal({ ...modal, phone: e.target.value })} placeholder="5511999999999" /></Field>
+            <Field label="WhatsApp (com DDD)"><input className={INPUT} list="sub-client-list" value={modal.phone} onChange={(e) => { const v = e.target.value; const hit = clients.find((c) => c.phoneE164 === v); setModal({ ...modal, phone: v, name: hit ? hit.name : modal.name }); }} placeholder="5511999999999" /><datalist id="sub-client-list">{clients.map((c) => (<option key={c._id} value={c.phoneE164}>{c.name ? c.name + " — " + c.phoneE164 : c.phoneE164}</option>))}</datalist></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Início"><input type="date" className={INPUT} value={modal.subscriptionStart} onChange={(e) => setModal({ ...modal, subscriptionStart: e.target.value })} /></Field>
               <Field label="Vencimento"><input type="date" className={INPUT} value={modal.subscriptionEnd} onChange={(e) => setModal({ ...modal, subscriptionEnd: e.target.value })} /></Field>
