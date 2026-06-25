@@ -146,6 +146,10 @@ function extractText(msg) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// [FIX] corrida com timeout: garante que toda chamada de rede resolva/rejeite
+const withTimeout = (p, ms) =>
+  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
 // Reenvia ao webhook com até 2 retentativas — evita perder auto-reply por falha pontual
 async function postWebhook(payload, attempt = 0) {
   try {
@@ -177,13 +181,22 @@ async function _sendAdminAlert(reason) {
     }
   } catch (e) { logger.error("falha ao enviar alerta admin: " + e.message); }
 }
+let _healthRunning = false; // [FIX] impede health-checks sobrepostos
 async function _healthCheck() {
+  if (_healthRunning) return;            // [FIX] reentrancia
+  _healthRunning = true;
   try {
     if (status !== "connected" || !sock) { return; }
     const idleMs = Date.now() - _lastHealthyAt;
     let ok = false;
-    try { await sock.query({ tag: "iq", attrs: { type: "get", xmlns: "w:p", to: "@s.whatsapp.net" } }); ok = true; }
-    catch (e) { ok = false; }
+    // [FIX] ping com timeout de 10s - antes travava para sempre no modo zumbi
+    try {
+      await withTimeout(
+        sock.query({ tag: "iq", attrs: { type: "get", xmlns: "w:p", to: "@s.whatsapp.net" } }),
+        10000
+      );
+      ok = true;
+    } catch (e) { ok = false; }
     if (ok) { _healthFails = 0; _lastHealthyAt = Date.now(); if (_zombie) { _zombie = false; logger.warn("saude restabelecida"); } return; }
     _healthFails++;
     logger.warn("health-check falhou (" + _healthFails + ") idle=" + Math.round(idleMs/1000) + "s");
@@ -196,17 +209,22 @@ async function _healthCheck() {
       scheduleReconnect();
     }
   } catch (e) { logger.error("erro no health-check: " + e.message); }
+  finally { _healthRunning = false; } // [FIX] sempre libera a trava
 }
 setInterval(_healthCheck, HEALTH_INTERVAL_MS);
 
 function scheduleReconnect() {
-  if (reconnectTimer) return; // já há um reconnect agendado
+  if (reconnectTimer || _loggingOut) return; // [FIX] nao reconecta durante logout
   const delay = Math.min(30000, 1500 * 2 ** reconnectAttempts);
   reconnectAttempts++;
-  logger.warn(`reagendando conexão em ${delay}ms (tentativa ${reconnectAttempts})`);
-  reconnectTimer = setTimeout(() => {
+  logger.warn(`reagendando conexao em ${delay}ms (tentativa ${reconnectAttempts})`);
+  reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
-    start().catch((e) => { logger.error(e.message); scheduleReconnect(); });
+    try {
+      // [FIX] descarta explicitamente o socket zumbi antes de recriar
+      if (sock) { try { sock.ev.removeAllListeners(); sock.end?.(); } catch {} sock = null; }
+      await start();
+    } catch (e) { logger.error(e.message); scheduleReconnect(); }
   }, delay);
 }
 
