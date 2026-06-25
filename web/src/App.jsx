@@ -1209,23 +1209,55 @@ function PipelineView({ toast }) {
   async function saveOnb() { try { await api("onboarding/config", { method: "PUT", body: onb }); toast("Onboarding salvo.", "indigo"); } catch (e) { toast("Erro: " + e.message, "red"); } }
 
   function exportJson() {
-    const blob = new Blob([JSON.stringify(contacts, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `esteira-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    toast(`Backup de ${contacts.length} item(ns) baixado!`, "emerald");
-  }
-  async function importJson(e) {
-    const file = e.target.files?.[0]; if (!file) return;
-    try {
-      const items = JSON.parse(await file.text());
+  // Backup COMPLETO da esteira: clientes + mensagens das semanas + onboarding.
+  const payload = {
+    _type: "autoflow-esteira",
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    pipelineContacts: contacts,
+    pipelineConfig: cfg || null,
+    onboardingConfig: onb || null,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `esteira-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  const parts = [`${contacts.length} cliente(s)`];
+  if (cfg?.weeks?.length) parts.push(`${cfg.weeks.length} semana(s)`);
+  if (onb?.steps?.length) parts.push(`${onb.steps.length} passo(s) de onboarding`);
+  toast(`Backup baixado: ${parts.join(", ")}.`, "emerald");
+}
+async function importJson(e) {
+  const file = e.target.files?.[0]; if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    // Retrocompat: backup antigo era um array puro de contatos da esteira.
+    const isV2 = parsed && !Array.isArray(parsed) && (parsed._type === "autoflow-esteira" || parsed.pipelineContacts || parsed.pipelineConfig || parsed.onboardingConfig);
+    const items = Array.isArray(parsed) ? parsed : (parsed.pipelineContacts || parsed.contacts || []);
+    const done = [];
+    // 1) Clientes da esteira (idempotente via upsert no backend)
+    if (Array.isArray(items) && items.length) {
       const res = await api("pipeline/contacts/import", { method: "POST", body: items });
-      toast(`Importação concluída: ${res.inserted} adicionado(s), ${res.updated} atualizado(s)`, "indigo");
-      await load();
-    } catch { toast("Arquivo inválido. Selecione um backup .json válido.", "red"); }
-    finally { e.target.value = ""; }
-  }
+      done.push(`${res.inserted} adicionado(s), ${res.updated} atualizado(s)`);
+    }
+    // 2) Mensagens das semanas (substitui a config atual pela do backup)
+    if (isV2 && parsed.pipelineConfig) {
+      const { _id, __v, createdAt, updatedAt, ...pc } = parsed.pipelineConfig;
+      await api("pipeline/config", { method: "PUT", body: pc });
+      done.push("semanas restauradas");
+    }
+    // 3) Onboarding (substitui a sequência atual pela do backup)
+    if (isV2 && parsed.onboardingConfig) {
+      const { _id, __v, createdAt, updatedAt, ...oc } = parsed.onboardingConfig;
+      await api("onboarding/config", { method: "PUT", body: oc });
+      done.push("onboarding restaurado");
+    }
+    toast(`Importação concluída: ${done.join(" · ") || "nada a restaurar"}`, "indigo");
+    await load();
+  } catch { toast("Arquivo inválido. Selecione um backup .json válido.", "red"); }
+  finally { e.target.value = ""; }
+}
 
   const onbSteps = onb?.steps || [];
   function updateStep(i, patch) { const steps = [...onbSteps]; steps[i] = { ...steps[i], ...patch }; setOnb((o) => ({ ...o, steps })); }
