@@ -71,9 +71,11 @@ function isNegatedBefore(msgNorm, idx) {
   return before.some(w => NEGATIONS.includes(w));
 }
 function matchLoose(msgNorm, kw) {
+  const shortKw = kw.length <= 3;
   let from = 0, idx;
   while ((idx = msgNorm.indexOf(kw, from)) !== -1) {
-    if (!isNegatedBefore(msgNorm, idx)) return true;
+    const okBoundary = !shortKw || (!/[a-z0-9]/.test(msgNorm[idx - 1] || "") && !/[a-z0-9]/.test(msgNorm[idx + kw.length] || ""));
+    if (okBoundary && !isNegatedBefore(msgNorm, idx)) return true;
     from = idx + kw.length;
   }
   return false;
