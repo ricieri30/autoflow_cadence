@@ -307,7 +307,12 @@ function _isDupMsg(id){
         const pushName = msg.pushName || "";
         rememberContact(remoteJid, pushName);
 
-        const realDigits = remoteJid.endsWith("@s.whatsapp.net") ? phoneFromJid(remoteJid) : phoneFromJid(msg.key?.senderPn || "");
+        let realJid = msg.key.senderPn || msg.key.participantPn || "";
+        if (!realJid && remoteJid.endsWith("@lid")) {
+          try { const mapped = await sock.signalRepository?.lidMapping?.getPNForLID?.(remoteJid); if (mapped) realJid = mapped; } catch (_) {}
+        }
+        if (!realJid && remoteJid.endsWith("@s.whatsapp.net")) realJid = remoteJid;
+        const realDigits = onlyDigits(realJid);
         const lidDigits = isLid(remoteJid) ? phoneFromJid(remoteJid) : "";
 
         await postWebhook({
