@@ -98,6 +98,17 @@ function keywordMatches(msgNorm, ruleKwRaw) {
   }
   return false;
 }
+function ruleSpecificity(rule){
+  const parts=String(rule.keyword||"").split(/[,||]/).map(x=>x.trim()).filter(Boolean);
+  let best=0;
+  for(const part of parts){
+    const strict=(part.length>=2)&&((part[0]==='"'&&part[part.length-1]==='"')||(part[0]==="'"&&part[part.length-1]==="'"));
+    const core=strict?part.slice(1,-1):part;
+    const kw=normText(core);
+    if(kw&&kw.length>best)best=kw.length;
+  }
+  return best;
+}
 // === [/AUTOFLOW PATCH v2] ===
 
 // Verifica se o horário atual está dentro da faixa (trata virada de meia-noite)
@@ -588,7 +599,7 @@ router.post("/auto-reply/test", auth, async (req, res) => {
 
   const rules = await AutoReply.find({ active: true }).sort({ targetPhone: -1, createdAt: 1 });
 
-  let matched = null;
+  let matched = null, bestScoreT = -1;
   const checked = [];
 
   for (const rule of rules) {
@@ -600,7 +611,10 @@ router.post("/auto-reply/test", auth, async (req, res) => {
       active:      rule.active,
       skip_reason,
     });
-    if (!skip_reason && !matched) matched = rule;
+    if (!skip_reason) {
+      const score = ruleSpecificity(rule);
+      if (score > bestScoreT) { bestScoreT = score; matched = rule; }
+    }
   }
 
   res.json({
@@ -707,9 +721,11 @@ router.post("/internal/message", async (req, res) => {
 
   const rules = await AutoReply.find({ active: true }).sort({ targetPhone: -1, createdAt: 1 });
 
-  let matched = null;
+  let matched = null, bestScore = -1;
   for (const rule of rules) {
-    if (!evaluateRule(rule, text, candidates)) { matched = rule; break; }
+    if (evaluateRule(rule, text, candidates)) continue;
+    const score = ruleSpecificity(rule);
+    if (score > bestScore) { bestScore = score; matched = rule; }
   }
 
   if (matched) {
