@@ -14,6 +14,9 @@ import { User, Contact, Template, Recurring, ScheduledMessage, AutoReply,
 import { makeQueue, upsertRecurringScheduler, removeRecurringScheduler } from "./scheduler.js";
 
 const router = express.Router();
+// wrap: captura erros de handlers async e os repassa ao error handler central,
+// evitando que uma excecao (ex.: CastError) derrube o processo inteiro.
+const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const queue = makeQueue();
 
 // ══════════════════════════════════════════════════════════════════
@@ -408,19 +411,19 @@ router.get("/subscriptions/expired", auth, async (_req, res) => {
 });
 
 // ── Recurring ─────────────────────────────────────────────────────
-router.get("/recurring", auth, async (_req, res) => {
+router.get("/recurring", auth, wrap(async (_req, res) => {
   const list = await Recurring.find({}).sort({ createdAt: -1 }).populate("templateId");
   res.json(list);
-});
+}));
 
-router.post("/recurring", auth, async (req, res) => {
+router.post("/recurring", auth, wrap(async (req, res) => {
   const doc = await Recurring.create(req.body);
   if (doc.enabled) await upsertRecurringScheduler(queue, doc);
   await Audit.create({ who: req.user.email, action: "CREATE_RECURRING", entity: String(doc._id), detail: `Criou: ${doc.name}`, ok: true });
   res.json(doc);
-});
+}));
 
-router.put("/recurring/:id", auth, async (req, res) => {
+router.put("/recurring/:id", auth, wrap(async (req, res) => {
   const { _id, createdAt, ...data } = req.body;
   const doc = await Recurring.findByIdAndUpdate(req.params.id, data, { new: true });
   if (!doc) return res.status(404).json({ error: "not_found" });
@@ -428,31 +431,31 @@ router.put("/recurring/:id", auth, async (req, res) => {
   else await removeRecurringScheduler(queue, req.params.id);
   await Audit.create({ who: req.user.email, action: "UPDATE_RECURRING", entity: String(doc._id), detail: `Editou: ${doc.name}`, ok: true });
   res.json(doc);
-});
+}));
 
-router.post("/recurring/:id/pause", auth, async (req, res) => {
+router.post("/recurring/:id/pause", auth, wrap(async (req, res) => {
   await Recurring.findByIdAndUpdate(req.params.id, { enabled: false });
   await removeRecurringScheduler(queue, req.params.id);
   res.json({ ok: true });
-});
+}));
 
-router.post("/recurring/:id/resume", auth, async (req, res) => {
+router.post("/recurring/:id/resume", auth, wrap(async (req, res) => {
   const doc = await Recurring.findByIdAndUpdate(req.params.id, { enabled: true }, { new: true });
   await upsertRecurringScheduler(queue, doc);
   res.json({ ok: true });
-});
+}));
 
-router.delete("/recurring/:id", auth, async (req, res) => {
+router.delete("/recurring/:id", auth, wrap(async (req, res) => {
   const doc = await Recurring.findById(req.params.id);
   if (!doc) return res.status(404).json({ error: "not_found" });
   await removeRecurringScheduler(queue, req.params.id);
   await Recurring.findByIdAndDelete(req.params.id);
   await Audit.create({ who: req.user.email, action: "DELETE_RECURRING", entity: req.params.id, detail: `Deletou: ${doc.name}`, ok: true });
   res.json({ ok: true });
-});
+}));
 
 // POST /recurring/:id/clone — clona uma regra de automação
-router.post("/recurring/:id/clone", auth, async (req, res) => {
+router.post("/recurring/:id/clone", auth, wrap(async (req, res) => {
   const original = await Recurring.findById(req.params.id);
   if (!original) return res.status(404).json({ error: "not_found" });
   const { _id, createdAt, ...data } = original.toObject();
@@ -463,9 +466,9 @@ router.post("/recurring/:id/clone", auth, async (req, res) => {
   });
   await Audit.create({ who: req.user.email, action: "CLONE_RECURRING", entity: String(clone._id), detail: `Clonou automação: ${original.name}`, ok: true });
   res.json(clone);
-});
+}));
 
-router.post("/recurring/preview", auth, async (req, res) => {
+router.post("/recurring/preview", auth, wrap(async (req, res) => {
   const { pattern, tz, count = 5 } = req.body;
   try {
     const it = cronParser.parseExpression(pattern, { tz });
@@ -475,7 +478,7 @@ router.post("/recurring/preview", auth, async (req, res) => {
   } catch (e) {
     res.status(400).json({ error: "invalid_cron", message: e.message });
   }
-});
+}));
 
 // ── Scheduled Messages ────────────────────────────────────────────
 // Listar agendamentos
@@ -1076,6 +1079,16 @@ router.get("/backup/status", auth, adminOnly, async (req, res) => {
     else if (fs.existsSync(reqRun) || fs.existsSync(reqRes)) status = "running";
     res.json({ id, status });
   } catch (e) { res.status(500).json({ error: "status_failed", message: e.message }); }
+});
+
+// AUTOFLOW_ERR_HANDLER: tratamento central de erros — responde JSON limpo
+// em vez de derrubar o processo. Erros de validacao/cast viram 400.
+router.use((err, req, res, next) => {
+  const isBad = err && (err.name === "CastError" || err.name === "ValidationError" || err.name === "BSONError");
+  const code = isBad ? 400 : 500;
+  console.error("[routes] erro tratado:", err && err.message);
+  if (res.headersSent) return next(err);
+  res.status(code).json({ error: isBad ? "invalid_input" : "internal_error", message: err && err.message });
 });
 
 export default router;
