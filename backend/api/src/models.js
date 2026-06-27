@@ -30,7 +30,7 @@ const RecurringSchema = new mongoose.Schema({
   enabled:           { type: Boolean, default: true },
   targetType:        { type: String, enum: ["tag","phone","contact"], default: "tag" },
   targetValue:       String,
-  templateId:        { type: mongoose.Schema.Types.ObjectId, ref: "Template" },
+  templateId:        { type: mongoose.Schema.Types.ObjectId, ref: "Template", set: v => (v === "" || v == null ? null : v) },
   pattern:           String,
   tz:                { type: String, default: "America/Sao_Paulo" },
   startDate:         Date,
@@ -49,7 +49,7 @@ const ScheduledMessageSchema = new mongoose.Schema({
   phoneE164:   { type: String, required: true },
   contactName: { type: String, default: "" },
   message:     { type: String, required: true },
-  templateId:  { type: mongoose.Schema.Types.ObjectId, ref: "Template", default: null },
+  templateId:  { type: mongoose.Schema.Types.ObjectId, ref: "Template", default: null, set: v => (v === "" || v == null ? null : v) },
   scheduledAt: { type: Date, required: true, index: true },
   status: {
     type: String,
